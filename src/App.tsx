@@ -47,29 +47,9 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Toaster, toast } from 'sonner';
 import { cn } from './lib/utils';
+import { api } from './services/api';
 import { StockEntry, Sale, Customer, Product, DashboardStats, StockType, AppSettings, User } from './types';
 import { translations } from './translations';
-import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut,
-  updateProfile,
-  sendPasswordResetEmail
-} from 'firebase/auth';
-import { 
-  collection, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  setDoc, 
-  query, 
-  orderBy,
-  getDoc
-} from 'firebase/firestore';
 
 // Error Boundary Component
 interface ErrorBoundaryProps {
@@ -203,10 +183,13 @@ export default function App() {
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'stock' | 'sales' | 'customers' | 'reports' | 'settings'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(true);
+  const [isAuthReady, setIsAuthReady] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>({
+    id: 'default',
+    name: 'Admin',
+    emailOrPhone: 'tukebamartinspedrolury@gmail.com'
+  });
   
   // State
   const [settings, setSettings] = useState<AppSettings>({ currency: 'BRL', language: 'pt', lowStockThreshold: 10 });
@@ -218,68 +201,45 @@ function AppContent() {
 
   // Auth Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // Fetch user profile and settings
-        try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            const userData = userDoc.data() as User & { settings?: AppSettings };
-            setCurrentUser({
-              id: user.uid,
-              name: userData.name,
-              emailOrPhone: userData.emailOrPhone
-            });
-            if (userData.settings) {
-              setSettings(userData.settings);
-            }
-          } else {
-            // Fallback for users created without a profile doc
-            setCurrentUser({
-              id: user.uid,
-              name: user.displayName || 'Usuário',
-              emailOrPhone: user.email || user.phoneNumber || ''
-            });
+    const checkAuth = async () => {
+      try {
+        const userData = await api.getProfile();
+        if (userData) {
+          setCurrentUser({
+            id: userData._id,
+            name: userData.name,
+            emailOrPhone: userData.emailOrPhone
+          });
+          if (userData.settings) {
+            setSettings(userData.settings);
           }
-          setIsLoggedIn(true);
-        } catch (error) {
-          handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
         }
-      } else {
-        setIsLoggedIn(false);
-        setCurrentUser(null);
+      } catch (error) {
+        console.error('Error fetching profile:', error);
       }
-      setIsAuthReady(true);
-    });
-    return () => unsubscribe();
+    };
+    checkAuth();
   }, []);
 
-  // Firestore Listeners
+  // Data Fetching
+  const fetchData = async () => {
+    try {
+      const [stockData, salesData, customersData] = await Promise.all([
+        api.getStock(),
+        api.getSales(),
+        api.getCustomers()
+      ]);
+      setStockEntries(stockData);
+      setSales(salesData);
+      setCustomers(customersData);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
   useEffect(() => {
-    if (!isLoggedIn || !currentUser) return;
-
-    const stockQuery = query(collection(db, 'users', currentUser.id, 'stockEntries'), orderBy('date', 'desc'));
-    const salesQuery = query(collection(db, 'users', currentUser.id, 'sales'), orderBy('date', 'desc'));
-    const customersQuery = query(collection(db, 'users', currentUser.id, 'customers'), orderBy('name', 'asc'));
-
-    const unsubStock = onSnapshot(stockQuery, (snapshot) => {
-      setStockEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as StockEntry)));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${currentUser.id}/stockEntries`));
-
-    const unsubSales = onSnapshot(salesQuery, (snapshot) => {
-      setSales(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale)));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${currentUser.id}/sales`));
-
-    const unsubCustomers = onSnapshot(customersQuery, (snapshot) => {
-      setCustomers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer)));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${currentUser.id}/customers`));
-
-    return () => {
-      unsubStock();
-      unsubSales();
-      unsubCustomers();
-    };
-  }, [isLoggedIn, currentUser]);
+    fetchData();
+  }, []);
 
   const formatCurrency = (value: number) => {
     const symbol = CURRENCY_SYMBOLS[settings.currency] || CURRENCY_SYMBOLS.BRL;
@@ -403,120 +363,14 @@ function AppContent() {
           </div>
         )}
 
-        <button 
-          onClick={() => setShowLogoutConfirm(true)}
-          className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-apple-red hover:bg-red-50 transition-all duration-200"
-        >
-          <LogOut size={20} />
-          <span className="font-medium">{t.logout}</span>
-        </button>
       </div>
     </div>
   );
-
-  if (!isAuthReady) {
-    return (
-      <div className="min-h-screen bg-apple-gray-50 flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-apple-blue border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!isLoggedIn) {
-    return (
-      <>
-        <Toaster position="top-center" richColors />
-        <AuthView 
-          onLogin={async (email, password) => {
-            try {
-              await signInWithEmailAndPassword(auth, email, password);
-            } catch (error: any) {
-              toast.error(t.invalidCredentials);
-            }
-          }}
-          onRegister={async (name, email, password) => {
-            try {
-              const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-              await updateProfile(userCredential.user, { displayName: name });
-              // Create user profile in Firestore
-              await setDoc(doc(db, 'users', userCredential.user.uid), {
-                id: userCredential.user.uid,
-                name,
-                emailOrPhone: email,
-                settings: { currency: 'BRL', language: 'pt', lowStockThreshold: 10 }
-              });
-              toast.success(t.accountCreated);
-            } catch (error: any) {
-              if (error.code === 'auth/email-already-in-use') {
-                toast.error(t.userAlreadyExists);
-              } else {
-                toast.error(error.message);
-              }
-            }
-          }}
-          t={t}
-        />
-      </>
-    );
-  }
 
   return (
     <div className="min-h-screen flex">
       <Toaster position="top-center" richColors />
       <Sidebar />
-      
-      {/* Logout Confirmation Modal */}
-      <AnimatePresence>
-        {showLogoutConfirm && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowLogoutConfirm(false)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-sm apple-card p-8 text-center space-y-6"
-            >
-              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto">
-                <LogOut className="text-apple-red w-8 h-8" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-xl font-bold text-gray-900">{t.logout}</h3>
-                <p className="text-gray-500">{t.confirmLogout}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4 pt-2">
-                <button 
-                  onClick={() => setShowLogoutConfirm(false)}
-                  className="apple-button-secondary"
-                >
-                  {t.cancel}
-                </button>
-                <button 
-                  onClick={async () => {
-                    try {
-                      await signOut(auth);
-                      setIsLoggedIn(false);
-                      setCurrentUser(null);
-                      setShowLogoutConfirm(false);
-                      toast.info(t.logout);
-                    } catch (error) {
-                      toast.error("Erro ao sair");
-                    }
-                  }}
-                  className="apple-button-primary bg-apple-red hover:bg-red-600 border-none"
-                >
-                  {t.confirm}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
       
       {/* Overlay for mobile sidebar */}
       <AnimatePresence>
@@ -587,27 +441,30 @@ function AppContent() {
                 onAdd={async (e) => {
                   try {
                     const { id, ...data } = e;
-                    await addDoc(collection(db, 'users', currentUser!.id, 'stockEntries'), data);
+                    await api.addStock(data);
+                    await fetchData();
                     toast.success(t.entryAdded || 'Entrada adicionada!');
                   } catch (error) {
-                    handleFirestoreError(error, OperationType.CREATE, `users/${currentUser!.id}/stockEntries`);
+                    toast.error('Erro ao adicionar entrada');
                   }
                 }} 
                 onUpdate={async (e) => {
                   try {
                     const { id, ...data } = e;
-                    await updateDoc(doc(db, 'users', currentUser!.id, 'stockEntries', id), data as any);
+                    await api.updateStock(id, data);
+                    await fetchData();
                     toast.success(t.entryUpdated || 'Entrada atualizada!');
                   } catch (error) {
-                    handleFirestoreError(error, OperationType.UPDATE, `users/${currentUser!.id}/stockEntries/${e.id}`);
+                    toast.error('Erro ao atualizar entrada');
                   }
                 }}
                 onDelete={async (id) => {
                   try {
-                    await deleteDoc(doc(db, 'users', currentUser!.id, 'stockEntries', id));
+                    await api.deleteStock(id);
+                    await fetchData();
                     toast.success(t.entryDeleted || 'Entrada excluída!');
                   } catch (error) {
-                    handleFirestoreError(error, OperationType.DELETE, `users/${currentUser!.id}/stockEntries/${id}`);
+                    toast.error('Erro ao excluir entrada');
                   }
                 }}
                 t={t} 
@@ -624,27 +481,29 @@ function AppContent() {
                 onAdd={async (s) => {
                   try {
                     const { id, ...data } = s;
-                    await addDoc(collection(db, 'users', currentUser!.id, 'sales'), data);
+                    await api.addSale(data);
+                    await fetchData();
                     toast.success(t.saleAdded || 'Venda registrada!');
                   } catch (error) {
-                    handleFirestoreError(error, OperationType.CREATE, `users/${currentUser!.id}/sales`);
+                    toast.error('Erro ao registrar venda');
                   }
                 }} 
                 onUpdate={async (s) => {
                   try {
-                    const { id, ...data } = s;
-                    await updateDoc(doc(db, 'users', currentUser!.id, 'sales', id), data as any);
-                    toast.success(t.saleUpdated || 'Venda atualizada!');
+                    // Update not implemented in API yet, but we can add it if needed
+                    // For now let's just use add/delete pattern or implement update
+                    toast.info('Edição de venda não disponível no momento');
                   } catch (error) {
-                    handleFirestoreError(error, OperationType.UPDATE, `users/${currentUser!.id}/sales/${s.id}`);
+                    toast.error('Erro ao atualizar venda');
                   }
                 }}
                 onDelete={async (id) => {
                   try {
-                    await deleteDoc(doc(db, 'users', currentUser!.id, 'sales', id));
+                    await api.deleteSale(id);
+                    await fetchData();
                     toast.success(t.saleDeleted || 'Venda excluída!');
                   } catch (error) {
-                    handleFirestoreError(error, OperationType.DELETE, `users/${currentUser!.id}/sales/${id}`);
+                    toast.error('Erro ao excluir venda');
                   }
                 }}
                 t={t}
@@ -658,27 +517,30 @@ function AppContent() {
                 onAdd={async (c) => {
                   try {
                     const { id, ...data } = c;
-                    await addDoc(collection(db, 'users', currentUser!.id, 'customers'), data);
+                    await api.addCustomer(data);
+                    await fetchData();
                     toast.success(t.customerAdded || 'Cliente adicionado!');
                   } catch (error) {
-                    handleFirestoreError(error, OperationType.CREATE, `users/${currentUser!.id}/customers`);
+                    toast.error('Erro ao adicionar cliente');
                   }
                 }}
                 onUpdate={async (c) => {
                   try {
                     const { id, ...data } = c;
-                    await updateDoc(doc(db, 'users', currentUser!.id, 'customers', id), data as any);
+                    await api.updateCustomer(id, data);
+                    await fetchData();
                     toast.success(t.customerUpdated || 'Cliente atualizado!');
                   } catch (error) {
-                    handleFirestoreError(error, OperationType.UPDATE, `users/${currentUser!.id}/customers/${c.id}`);
+                    toast.error('Erro ao atualizar cliente');
                   }
                 }}
                 onDelete={async (id) => {
                   try {
-                    await deleteDoc(doc(db, 'users', currentUser!.id, 'customers', id));
+                    await api.deleteCustomer(id);
+                    await fetchData();
                     toast.success(t.customerDeleted || 'Cliente excluído!');
                   } catch (error) {
-                    handleFirestoreError(error, OperationType.DELETE, `users/${currentUser!.id}/customers/${id}`);
+                    toast.error('Erro ao excluir cliente');
                   }
                 }}
                 t={t}
@@ -701,12 +563,12 @@ function AppContent() {
                 onUpdate={async (newSettings) => {
                   try {
                     if (currentUser) {
-                      await updateDoc(doc(db, 'users', currentUser.id), { settings: newSettings });
+                      await api.updateSettings(newSettings);
                       setSettings(newSettings);
                       toast.success(t.settingsSaved || 'Configurações salvas!');
                     }
                   } catch (error) {
-                    handleFirestoreError(error, OperationType.UPDATE, `users/${currentUser?.id}`);
+                    toast.error('Erro ao salvar configurações');
                   }
                 }} 
                 t={t} 
@@ -2234,202 +2096,3 @@ function ReportsView({ sales, products, customers, t, formatCurrency, settings }
   );
 }
 
-function AuthView({ 
-  onLogin, 
-  onRegister, 
-  t 
-}: { 
-  onLogin: (email: string, password: string) => Promise<void>; 
-  onRegister: (name: string, email: string, password: string) => Promise<void>; 
-  t: any 
-}) {
-  const [mode, setMode] = useState<'login' | 'register' | 'forgotPassword'>('login');
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    emailOrPhone: '',
-    password: '',
-    confirmPassword: ''
-  });
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    try {
-      if (mode === 'register') {
-        if (formData.password !== formData.confirmPassword) {
-          toast.error(t.passwordsDoNotMatch);
-          return;
-        }
-        if (formData.password.length < 6) {
-          toast.error(t.passwordTooShort);
-          return;
-        }
-        await onRegister(formData.name, formData.emailOrPhone, formData.password);
-      } else if (mode === 'login') {
-        await onLogin(formData.emailOrPhone, formData.password);
-      } else if (mode === 'forgotPassword') {
-        try {
-          await sendPasswordResetEmail(auth, formData.emailOrPhone);
-          toast.success(t.resetLinkSent);
-          setMode('login');
-        } catch (error: any) {
-          toast.error("Erro ao enviar link de redefinição");
-        }
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-apple-gray-50 flex items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md apple-card p-10 space-y-8"
-      >
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 bg-apple-blue rounded-2xl flex items-center justify-center shadow-xl shadow-blue-200 mx-auto mb-6">
-            <Sparkles className="text-white w-10 h-10" />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-            {mode === 'login' ? t.welcomeBack : mode === 'register' ? t.register : t.resetPassword}
-          </h1>
-          <p className="text-gray-500">
-            {mode === 'login' ? t.enterCredentials : mode === 'register' ? t.createAccount : t.forgotPassword}
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {mode === 'register' && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-500 ml-1">{t.fullName || 'Nome Completo'}</label>
-              <div className="relative">
-                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                <input 
-                  required
-                  type="text"
-                  value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="João Silva"
-                  className="apple-input pl-12"
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-500 ml-1">{t.emailOrPhone}</label>
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input 
-                required
-                type="text"
-                value={formData.emailOrPhone}
-                onChange={e => setFormData({ ...formData, emailOrPhone: e.target.value })}
-                placeholder="email@exemplo.com"
-                className="apple-input pl-12"
-              />
-            </div>
-          </div>
-
-          {mode !== 'forgotPassword' && (
-            <>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-500 ml-1">{t.password}</label>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                  <input 
-                    required
-                    type={showPassword ? "text" : "password"}
-                    value={formData.password}
-                    onChange={e => setFormData({ ...formData, password: e.target.value })}
-                    placeholder="••••••••"
-                    className="apple-input pl-12 pr-12"
-                  />
-                  <button 
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
-              </div>
-
-              {mode === 'register' && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-500 ml-1">{t.confirmPassword}</label>
-                  <div className="relative">
-                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                    <input 
-                      required
-                      type={showPassword ? "text" : "password"}
-                      value={formData.confirmPassword}
-                      onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      placeholder="••••••••"
-                      className="apple-input pl-12"
-                    />
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          <button 
-            type="submit" 
-            disabled={isLoading}
-            className="w-full apple-button-primary py-4 text-lg font-bold flex items-center justify-center gap-2"
-          >
-            {isLoading && <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-            {mode === 'login' ? t.login : mode === 'register' ? t.register : t.sendResetLink}
-          </button>
-        </form>
-
-        <div className="text-center space-y-4">
-          {mode === 'login' && (
-            <>
-              <button 
-                onClick={() => setMode('forgotPassword')}
-                className="text-sm text-apple-blue hover:underline font-medium"
-              >
-                {t.forgotPassword}
-              </button>
-              <p className="text-sm text-gray-500">
-                {t.noAccount}{' '}
-                <button 
-                  onClick={() => setMode('register')}
-                  className="text-apple-blue hover:underline font-bold"
-                >
-                  {t.register}
-                </button>
-              </p>
-            </>
-          )}
-          {mode === 'register' && (
-            <p className="text-sm text-gray-500">
-              {t.alreadyHaveAccount}{' '}
-              <button 
-                onClick={() => setMode('login')}
-                className="text-apple-blue hover:underline font-bold"
-              >
-                {t.login}
-              </button>
-            </p>
-          )}
-          {mode === 'forgotPassword' && (
-            <button 
-              onClick={() => setMode('login')}
-              className="text-sm text-apple-blue hover:underline font-bold"
-            >
-              {t.login}
-            </button>
-          )}
-        </div>
-      </motion.div>
-    </div>
-  );
-}
