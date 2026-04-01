@@ -36,6 +36,7 @@ export interface Product {
   type: StockType;
   stock: number;
   averageCost: number;
+  price?: number;
   description?: string;
 }
 

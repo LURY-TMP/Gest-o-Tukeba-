@@ -1,21 +1,28 @@
 import mongoose from 'mongoose';
 import { User } from './models.js';
 import { Response, NextFunction } from 'express';
+import connectDB from './db.js';
 
 export const seedAdmin = async () => {
   try {
+    await connectDB();
     const adminEmail = 'tukebamartinspedrolury@gmail.com';
-    let admin = await User.findOne({ emailOrPhone: adminEmail });
+    const admin = await User.findOne({ emailOrPhone: adminEmail });
     
     if (!admin) {
       const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-      admin = new User({
+      const newAdmin = new User({
         emailOrPhone: adminEmail,
-        password: adminPassword, // In a real app, this should be hashed, but we're removing auth
+        password: adminPassword, // In a real app, this should be hashed
         name: 'Admin',
-        role: 'admin'
+        role: 'admin',
+        settings: {
+          currency: 'MZN',
+          language: 'pt',
+          lowStockThreshold: 10
+        }
       });
-      await admin.save();
+      await newAdmin.save();
       console.log('Admin user seeded successfully');
     } else if (admin.role !== 'admin') {
       // Ensure existing user has admin role
@@ -30,6 +37,7 @@ export const seedAdmin = async () => {
 
 export const authenticate = async (req: any, res: Response, next: NextFunction) => {
   try {
+    await connectDB();
     const adminEmail = 'tukebamartinspedrolury@gmail.com';
     const user = await User.findOne({ emailOrPhone: adminEmail });
     if (user) {

@@ -43,7 +43,7 @@ const CustomerSchema = new mongoose.Schema({
   lastPurchaseDate: { type: Date }
 }, { timestamps: true });
 
-export const User = mongoose.model('User', UserSchema);
-export const StockEntry = mongoose.model('StockEntry', StockEntrySchema);
-export const Sale = mongoose.model('Sale', SaleSchema);
-export const Customer = mongoose.model('Customer', CustomerSchema);
+export const User = mongoose.models.User || mongoose.model('User', UserSchema);
+export const StockEntry = mongoose.models.StockEntry || mongoose.model('StockEntry', StockEntrySchema);
+export const Sale = mongoose.models.Sale || mongoose.model('Sale', SaleSchema);
+export const Customer = mongoose.models.Customer || mongoose.model('Customer', CustomerSchema);

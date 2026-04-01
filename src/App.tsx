@@ -13,6 +13,7 @@ import {
   DollarSign, 
   AlertCircle,
   ChevronRight,
+  ChevronDown,
   Menu,
   X,
   Trash2,
@@ -102,7 +103,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   BRL: 'R$',
   USD: '$',
   EUR: '€',
-  MZN: 'MT',
+  MZN: 'MZN',
   KZ: 'Kz'
 };
 
@@ -192,7 +193,7 @@ function AppContent() {
   });
   
   // State
-  const [settings, setSettings] = useState<AppSettings>({ currency: 'BRL', language: 'pt', lowStockThreshold: 10 });
+  const [settings, setSettings] = useState<AppSettings>({ currency: 'MZN', language: 'pt', lowStockThreshold: 10 });
   const [stockEntries, setStockEntries] = useState<StockEntry[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -243,7 +244,13 @@ function AppContent() {
 
   const formatCurrency = (value: number) => {
     const symbol = CURRENCY_SYMBOLS[settings.currency] || CURRENCY_SYMBOLS.BRL;
-    return `${symbol} ${value.toLocaleString(settings.language === 'pt' ? 'pt-BR' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const formattedValue = value.toLocaleString(settings.language === 'pt' ? 'pt-BR' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    
+    if (settings.currency === 'MZN') {
+      return `${formattedValue} MZN`;
+    }
+    
+    return `${symbol} ${formattedValue}`;
   };
 
   // Derived Data
@@ -252,11 +259,13 @@ function AppContent() {
     
     stockEntries.forEach(entry => {
       const key = `${entry.brand}-${entry.type}`;
-      const existing = pMap.get(key) || { brand: entry.brand, type: entry.type, stock: 0, averageCost: 0, description: entry.description };
+      const existing = pMap.get(key) || { brand: entry.brand, type: entry.type, stock: 0, averageCost: 0, description: entry.description, price: entry.unitPrice };
       const totalCost = (existing.stock * existing.averageCost) + entry.totalPrice;
       existing.stock += entry.quantity;
       existing.averageCost = totalCost / existing.stock;
       if (entry.description) existing.description = entry.description;
+      // Use the latest entry price as the current price
+      existing.price = entry.unitPrice;
       pMap.set(key, existing);
     });
 
@@ -586,10 +595,17 @@ function AppContent() {
 function DashboardView({ stats, products, sales, t, formatCurrency, settings }: { stats: DashboardStats, products: Product[], sales: Sale[], t: any, formatCurrency: (v: number) => string, settings: AppSettings }) {
   const lowStockProducts = products.filter(p => p.stock < settings.lowStockThreshold);
   const [isMounted, setIsMounted] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  const getStockStatus = (stock: number) => {
+    if (stock === 0) return { label: t.stockEmpty, color: 'text-red-600', bg: 'bg-red-50' };
+    if (stock < 5) return { label: t.stockLow, color: 'text-orange-600', bg: 'bg-orange-50' };
+    return { label: t.stockOk, color: 'text-green-600', bg: 'bg-green-50' };
+  };
   
   const chartData = useMemo(() => {
     const last7Days = Array.from({ length: 7 }).map((_, i) => {
@@ -695,6 +711,108 @@ function DashboardView({ stats, products, sales, t, formatCurrency, settings }: 
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Stock Status Accordion */}
+      <div className="apple-card p-8">
+        <h3 className="text-lg font-bold mb-8 flex items-center gap-2">
+          <Package className="text-apple-blue" size={20} />
+          {t.stockStatus}
+        </h3>
+        <div className="space-y-4">
+          {products.length > 0 ? (
+            products.map((product) => {
+              const id = `${product.brand}-${product.type}`;
+              const isExpanded = expandedId === id;
+              const status = getStockStatus(product.stock);
+
+              return (
+                <div key={id} className="border border-apple-gray-100 rounded-2xl overflow-hidden transition-all duration-300 shadow-sm hover:shadow-md">
+                  <button 
+                    onClick={() => setExpandedId(isExpanded ? null : id)}
+                    className="w-full p-5 flex items-center justify-between hover:bg-apple-gray-50 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={cn("p-2.5 rounded-xl", status.bg)}>
+                        <Package className={status.color} size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-gray-900">{product.brand}</h4>
+                        <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">{product.type}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-right hidden sm:block">
+                        <p className="text-sm font-bold text-apple-blue">{formatCurrency(product.price || 0)}</p>
+                        <p className="text-[9px] text-gray-400 uppercase font-bold tracking-widest">{t.price}</p>
+                      </div>
+                      <div className="text-right hidden sm:block">
+                        <p className="text-lg font-bold text-gray-900">{product.stock}</p>
+                        <p className="text-[9px] text-gray-400 uppercase font-bold tracking-widest">{t.totalStock}</p>
+                      </div>
+                      <div className={cn(
+                        "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider hidden md:block",
+                        status.bg,
+                        status.color
+                      )}>
+                        {status.label}
+                      </div>
+                      <motion.div
+                        animate={{ rotate: isExpanded ? 180 : 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <ChevronDown className="text-gray-400" size={20} />
+                      </motion.div>
+                    </div>
+                  </button>
+
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="bg-apple-gray-50/30 border-t border-apple-gray-100"
+                      >
+                        <div className="p-6 grid grid-cols-1 sm:grid-cols-4 gap-6">
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{t.productName}</p>
+                            <p className="text-sm font-bold text-gray-900">{product.brand} {product.type}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{t.currentStock}</p>
+                            <p className="text-sm font-bold text-gray-900">{product.stock} {t.unit}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{t.price}</p>
+                            <p className="text-sm font-bold text-apple-blue">{formatCurrency(product.price || 0)}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{t.status}</p>
+                            <div>
+                              <span className={cn(
+                                "inline-flex px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                status.bg,
+                                status.color
+                              )}>
+                                {status.label}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })
+          ) : (
+            <div className="text-center py-12">
+              <Package className="text-apple-gray-200 mx-auto mb-4" size={48} />
+              <p className="text-gray-400 italic">{t.noEntriesRegistered}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1719,7 +1837,7 @@ function SettingsView({ settings, onUpdate, t }: { settings: AppSettings, onUpda
                 { id: 'BRL', label: 'Real (R$)', symbol: 'R$' },
                 { id: 'USD', label: 'Dollar ($)', symbol: '$' },
                 { id: 'EUR', label: 'Euro (€)', symbol: '€' },
-                { id: 'MZN', label: 'Metical (MT)', symbol: 'MT' },
+                { id: 'MZN', label: 'Metical (MZN)', symbol: 'MZN' },
                 { id: 'KZ', label: 'Kwanza (Kz)', symbol: 'Kz' },
               ].map((currency) => (
                 <button

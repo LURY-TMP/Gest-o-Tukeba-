@@ -7,40 +7,48 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import apiRoutes from './server/routes.js';
 import { seedAdmin } from './server/auth.js';
+import connectDB from './server/db.js';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = 3000;
 
-  app.use(cors());
-  app.use(express.json());
+app.use(cors());
+app.use(express.json());
 
-  // MongoDB Connection
-  const MONGODB_URI = process.env.MONGODB_URI;
-  if (MONGODB_URI) {
-    try {
-      await mongoose.connect(MONGODB_URI);
-      console.log('Connected to MongoDB');
-      await seedAdmin();
-    } catch (err) {
-      console.error('MongoDB connection error:', err);
-    }
-  } else {
-    console.warn('MONGODB_URI not found in environment variables');
+// API Router
+const apiRouter = express.Router();
+
+// Ensure DB connection before any API request
+apiRouter.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('Database connection error:', err);
+    res.status(500).json({ message: 'Database connection failed' });
   }
+});
 
-  // API Routes
-  app.use('/api', apiRoutes);
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
+// Register API routes
+apiRouter.use(apiRoutes);
+
+apiRouter.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' 
   });
+});
 
-  // Vite middleware for development
+// Mount API router
+app.use('/api', apiRouter);
+
+// Vite middleware for development or static serving for production
+async function setupFrontend() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -54,10 +62,26 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
 }
 
-startServer();
+// Only start the server if not in a serverless environment
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  setupFrontend().then(() => {
+    app.listen(PORT, '0.0.0.0', async () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+      try {
+        await connectDB();
+        await seedAdmin();
+      } catch (err) {
+        console.error('Failed to seed admin:', err);
+      }
+    });
+  });
+} else {
+  // In Vercel, we still want to seed admin if possible
+  // This might be called multiple times, but seedAdmin is idempotent
+  connectDB().then(() => seedAdmin()).catch(err => console.error('Vercel startup seed error:', err));
+  setupFrontend();
+}
+
+export default app;
