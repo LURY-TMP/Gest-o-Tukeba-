@@ -1,0 +1,176 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Document ID: userId (Firebase Auth UID)
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required, size < 100)
+    //   - emailOrPhone: string (required, size < 100)
+    //   - settings: map (optional)
+    //     - currency: string (enum: BRL, USD, EUR, MZN, KZ)
+    //     - language: string (enum: pt, en)
+    //     - lowStockThreshold: number (positive)
+    //
+    // Collection: /users/{userId}/stockEntries/{entryId}
+    // Document ID: entryId
+    // Fields:
+    //   - id: string (required)
+    //   - date: string (required, ISO 8601)
+    //   - brand: string (required, size < 100)
+    //   - quantity: number (required, positive)
+    //   - type: string (required, enum: 3P, Meio, Completa)
+    //   - unitPrice: number (required, positive)
+    //   - totalPrice: number (required, positive)
+    //   - description: string (optional, size < 500)
+    //
+    // Collection: /users/{userId}/sales/{saleId}
+    // Document ID: saleId
+    // Fields:
+    //   - id: string (required)
+    //   - date: string (required, ISO 8601)
+    //   - brand: string (required, size < 100)
+    //   - quantity: number (required, positive)
+    //   - type: string (required, enum: 3P, Meio, Completa)
+    //   - price: number (required, positive)
+    //   - totalPrice: number (required, positive)
+    //   - customerId: string (required)
+    //
+    // Collection: /users/{userId}/customers/{customerId}
+    // Document ID: customerId
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required, size < 100)
+    //   - email: string (optional, email format)
+    //   - phone: string (optional, size < 20)
+    //   - totalSpent: number (required, positive)
+    //   - lastPurchaseDate: string (optional, ISO 8601)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['id', 'name', 'emailOrPhone']) &&
+             hasOnlyAllowedFields(['id', 'name', 'emailOrPhone', 'settings']) &&
+             data.id is string && data.id.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.emailOrPhone is string && data.emailOrPhone.size() > 0 && data.emailOrPhone.size() < 100 &&
+             (!('settings' in data) || (
+               data.settings is map &&
+               data.settings.keys().hasOnly(['currency', 'language', 'lowStockThreshold']) &&
+               data.settings.currency in ['BRL', 'USD', 'EUR', 'MZN', 'KZ'] &&
+               data.settings.language in ['pt', 'en'] &&
+               data.settings.lowStockThreshold is number && data.settings.lowStockThreshold >= 0
+             ));
+    }
+
+    function isValidStockEntry(data) {
+      return hasRequiredFields(['id', 'date', 'brand', 'quantity', 'type', 'unitPrice', 'totalPrice']) &&
+             hasOnlyAllowedFields(['id', 'date', 'brand', 'quantity', 'type', 'unitPrice', 'totalPrice', 'description']) &&
+             data.id is string && data.id.size() < 100 &&
+             isValidDateString(data.date) &&
+             data.brand is string && data.brand.size() > 0 && data.brand.size() < 100 &&
+             data.quantity is number && data.quantity > 0 &&
+             data.type in ['3P', 'Meio', 'Completa'] &&
+             data.unitPrice is number && data.unitPrice >= 0 &&
+             data.totalPrice is number && data.totalPrice >= 0 &&
+             (!('description' in data) || (data.description is string && data.description.size() < 500));
+    }
+
+    function isValidSale(data) {
+      return hasRequiredFields(['id', 'date', 'brand', 'quantity', 'type', 'price', 'totalPrice', 'customerId']) &&
+             hasOnlyAllowedFields(['id', 'date', 'brand', 'quantity', 'type', 'price', 'totalPrice', 'customerId']) &&
+             data.id is string && data.id.size() < 100 &&
+             isValidDateString(data.date) &&
+             data.brand is string && data.brand.size() > 0 && data.brand.size() < 100 &&
+             data.quantity is number && data.quantity > 0 &&
+             data.type in ['3P', 'Meio', 'Completa'] &&
+             data.price is number && data.price >= 0 &&
+             data.totalPrice is number && data.totalPrice >= 0 &&
+             data.customerId is string && data.customerId.size() < 100;
+    }
+
+    function isValidCustomer(data) {
+      return hasRequiredFields(['id', 'name', 'totalSpent']) &&
+             hasOnlyAllowedFields(['id', 'name', 'email', 'phone', 'totalSpent', 'lastPurchaseDate']) &&
+             data.id is string && data.id.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             (!('email' in data) || isValidEmail(data.email)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() < 20)) &&
+             data.totalSpent is number && data.totalSpent >= 0 &&
+             (!('lastPurchaseDate' in data) || isValidDateString(data.lastPurchaseDate));
+    }
+
+    // ===============================================================
+    // Match Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow delete: if isOwner(userId);
+
+      match /stockEntries/{entryId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidStockEntry(request.resource.data);
+        allow update: if isOwner(userId) && isValidStockEntry(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /sales/{saleId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidSale(request.resource.data);
+        allow update: if isOwner(userId) && isValidSale(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /customers/{customerId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidCustomer(request.resource.data);
+        allow update: if isOwner(userId) && isValidCustomer(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
