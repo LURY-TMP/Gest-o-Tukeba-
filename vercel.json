@@ -3,7 +3,10 @@
   "builds": [
     {
       "src": "server.ts",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["server/**"]
+      }
     },
     {
       "src": "package.json",
@@ -17,13 +20,12 @@
       "dest": "server.ts"
     },
     {
-      "src": "/(.*)",
-      "dest": "/$1",
-      "check": true
+      "src": "/assets/(.*)",
+      "dest": "/assets/$1"
     },
     {
       "src": "/(.*)",
-      "dest": "index.html"
+      "dest": "/index.html"
     }
   ]
 }
