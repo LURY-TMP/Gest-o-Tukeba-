@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { User } from './models.js';
 import { Response, NextFunction } from 'express';
 import connectDB from './db.js';
+import bcrypt from 'bcryptjs';
 
 export const seedAdmin = async () => {
   try {
@@ -11,9 +12,10 @@ export const seedAdmin = async () => {
     
     if (!admin) {
       const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+      const hashedPassword = await bcrypt.hash(adminPassword, 10);
       const newAdmin = new User({
         emailOrPhone: adminEmail,
-        password: adminPassword, // In a real app, this should be hashed
+        password: hashedPassword,
         name: 'Admin',
         role: 'admin',
         settings: {

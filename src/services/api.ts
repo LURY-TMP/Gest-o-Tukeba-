@@ -8,11 +8,26 @@ const getHeaders = () => {
   };
 };
 
+const handleResponse = async (res: Response) => {
+  const contentType = res.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || `API error: ${res.status}`);
+    }
+    return data;
+  } else {
+    const text = await res.text();
+    console.error('Non-JSON response received:', text.substring(0, 100));
+    throw new Error(`API returned non-JSON response (${res.status}). Check if the API route exists and is working correctly.`);
+  }
+};
+
 export const api = {
   // User
   getProfile: async () => {
     const res = await fetch(`${API_URL}/user/profile`, { headers: getHeaders() });
-    return res.json();
+    return handleResponse(res);
   },
   updateSettings: async (settings: AppSettings) => {
     const res = await fetch(`${API_URL}/user/settings`, {
@@ -20,13 +35,13 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(settings)
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   // Stock
   getStock: async () => {
     const res = await fetch(`${API_URL}/stock`, { headers: getHeaders() });
-    return res.json();
+    return handleResponse(res);
   },
   addStock: async (entry: Partial<StockEntry>) => {
     const res = await fetch(`${API_URL}/stock`, {
@@ -34,7 +49,7 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(entry)
     });
-    return res.json();
+    return handleResponse(res);
   },
   updateStock: async (id: string, entry: Partial<StockEntry>) => {
     const res = await fetch(`${API_URL}/stock/${id}`, {
@@ -42,20 +57,20 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(entry)
     });
-    return res.json();
+    return handleResponse(res);
   },
   deleteStock: async (id: string) => {
     const res = await fetch(`${API_URL}/stock/${id}`, {
       method: 'DELETE',
       headers: getHeaders()
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   // Sales
   getSales: async () => {
     const res = await fetch(`${API_URL}/sales`, { headers: getHeaders() });
-    return res.json();
+    return handleResponse(res);
   },
   addSale: async (sale: Partial<Sale>) => {
     const res = await fetch(`${API_URL}/sales`, {
@@ -63,20 +78,20 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(sale)
     });
-    return res.json();
+    return handleResponse(res);
   },
   deleteSale: async (id: string) => {
     const res = await fetch(`${API_URL}/sales/${id}`, {
       method: 'DELETE',
       headers: getHeaders()
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   // Customers
   getCustomers: async () => {
     const res = await fetch(`${API_URL}/customers`, { headers: getHeaders() });
-    return res.json();
+    return handleResponse(res);
   },
   addCustomer: async (customer: Partial<Customer>) => {
     const res = await fetch(`${API_URL}/customers`, {
@@ -84,7 +99,7 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(customer)
     });
-    return res.json();
+    return handleResponse(res);
   },
   updateCustomer: async (id: string, customer: Partial<Customer>) => {
     const res = await fetch(`${API_URL}/customers/${id}`, {
@@ -92,13 +107,13 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(customer)
     });
-    return res.json();
+    return handleResponse(res);
   },
   deleteCustomer: async (id: string) => {
     const res = await fetch(`${API_URL}/customers/${id}`, {
       method: 'DELETE',
       headers: getHeaders()
     });
-    return res.json();
+    return handleResponse(res);
   }
 };

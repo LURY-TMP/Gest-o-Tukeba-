@@ -6,7 +6,7 @@ const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
   role: { type: String, enum: ['admin', 'user'], default: 'user' },
   settings: {
-    currency: { type: String, enum: ['BRL', 'USD', 'EUR', 'MZN', 'KZ'], default: 'BRL' },
+    currency: { type: String, enum: ['BRL', 'USD', 'EUR', 'MZN', 'KZ'], default: 'MZN' },
     language: { type: String, enum: ['pt', 'en'], default: 'pt' },
     lowStockThreshold: { type: Number, default: 10 }
   }

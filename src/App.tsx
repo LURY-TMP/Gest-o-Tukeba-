@@ -243,13 +243,16 @@ function AppContent() {
   }, []);
 
   const formatCurrency = (value: number) => {
-    const symbol = CURRENCY_SYMBOLS[settings.currency] || CURRENCY_SYMBOLS.BRL;
-    const formattedValue = value.toLocaleString(settings.language === 'pt' ? 'pt-BR' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const formattedValue = value.toLocaleString(settings.language === 'pt' ? 'pt-BR' : 'en-US', { 
+      minimumFractionDigits: 2, 
+      maximumFractionDigits: 2 
+    });
     
     if (settings.currency === 'MZN') {
       return `${formattedValue} MZN`;
     }
     
+    const symbol = CURRENCY_SYMBOLS[settings.currency] || CURRENCY_SYMBOLS.BRL;
     return `${symbol} ${formattedValue}`;
   };
 
@@ -663,9 +666,9 @@ function DashboardView({ stats, products, sales, t, formatCurrency, settings }: 
         {/* Chart */}
         <div className="lg:col-span-2 apple-card p-8">
           <h3 className="text-lg font-bold mb-8">{t.salesPerformance}</h3>
-          <div className="h-[300px] w-full min-h-[300px]">
-            {isMounted && (
-              <ResponsiveContainer width="100%" height="100%">
+          <div className="h-[300px] w-full relative">
+            {isMounted && chartData.length > 0 && (
+              <ResponsiveContainer width="100%" height="100%" debounce={100}>
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0F0F0" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#999', fontSize: 12 }} dy={10} />
@@ -743,20 +746,9 @@ function DashboardView({ stats, products, sales, t, formatCurrency, settings }: 
                       </div>
                     </div>
                     <div className="flex items-center gap-6">
-                      <div className="text-right hidden sm:block">
-                        <p className="text-sm font-bold text-apple-blue">{formatCurrency(product.price || 0)}</p>
-                        <p className="text-[9px] text-gray-400 uppercase font-bold tracking-widest">{t.price}</p>
-                      </div>
-                      <div className="text-right hidden sm:block">
+                      <div className="text-right">
                         <p className="text-lg font-bold text-gray-900">{product.stock}</p>
                         <p className="text-[9px] text-gray-400 uppercase font-bold tracking-widest">{t.totalStock}</p>
-                      </div>
-                      <div className={cn(
-                        "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider hidden md:block",
-                        status.bg,
-                        status.color
-                      )}>
-                        {status.label}
                       </div>
                       <motion.div
                         animate={{ rotate: isExpanded ? 180 : 0 }}
@@ -822,9 +814,9 @@ function DashboardView({ stats, products, sales, t, formatCurrency, settings }: 
           <Package className="text-apple-blue" size={20} />
           {t.topProductsStock}
         </h3>
-        <div className="h-[300px] w-full min-h-[300px]">
-          {isMounted && (
-            <ResponsiveContainer width="100%" height="100%">
+        <div className="h-[300px] w-full relative">
+          {isMounted && topProductsStockData.length > 0 && (
+            <ResponsiveContainer width="100%" height="100%" debounce={100}>
               <BarChart data={topProductsStockData} layout="vertical" margin={{ left: 40, right: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#F0F0F0" />
                 <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#999', fontSize: 12 }} />

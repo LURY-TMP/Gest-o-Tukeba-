@@ -44,6 +44,11 @@ apiRouter.get('/health', (req, res) => {
   });
 });
 
+// 404 handler for API routes
+apiRouter.use((req, res) => {
+  res.status(404).json({ message: `API route not found: ${req.originalUrl}` });
+});
+
 // Mount API router
 app.use('/api', apiRouter);
 
